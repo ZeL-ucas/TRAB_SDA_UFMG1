@@ -3,7 +3,6 @@
 #include <winsock2.h>
 #include <stdio.h>
 #include <iostream>
+#include <mutex>
 
-#define TAMBUF  20
-
-int threadClient();
+int threadClient(std::mutex *escrita);

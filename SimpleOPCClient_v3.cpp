@@ -34,6 +34,7 @@
 #include "SOCWrapperFunctions.h"
 
 #include <thread>
+#include <mutex>
 #include "ThreadTCPClient.h"
 #include "ThreadTeclado.h"
 
@@ -42,6 +43,7 @@ using namespace std;
 #define OPC_SERVER_NAME L"Matrikon.OPC.Simulation.1"
 #define VT VT_R4
 
+mutex escritaSaidaPadrao;
 
 //#define REMOTE_SERVER_NAME L"your_path"
 
@@ -73,8 +75,8 @@ void main(void)
 
 	// Inicialização das threads
 
-	thread TCPClient(threadClient);
-	thread Teclado(threadTeclado);
+	thread TCPClient(threadClient, &escritaSaidaPadrao);
+	thread Teclado(threadTeclado, &escritaSaidaPadrao);
 
 	// Let's instantiante the IOPCServer interface and get a pointer of it:
 	printf("Instantiating the MATRIKON OPC Server for Simulation...\n");
@@ -196,8 +198,6 @@ void main(void)
         ticks2 = GetTickCount();
 	}
 	while ((ticks2 - ticks1) < 10000);
-
-
 
 	// Cancel the callback and release its reference
 	printf("Cancelling the IOPCDataCallback notifications...\n");
