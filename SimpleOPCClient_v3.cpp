@@ -33,6 +33,10 @@
 #include "SOCDataCallback.h"
 #include "SOCWrapperFunctions.h"
 
+#include <thread>
+#include "ThreadTCPClient.h"
+#include "ThreadTeclado.h"
+
 using namespace std;
 
 #define OPC_SERVER_NAME L"Matrikon.OPC.Simulation.1"
@@ -66,6 +70,11 @@ void main(void)
 	// Have to be done before using microsoft COM library:
 	printf("Initializing the COM environment...\n");
 	CoInitialize(NULL);
+
+	// Inicialização das threads
+
+	thread TCPClient(threadClient);
+	thread Teclado(threadTeclado);
 
 	// Let's instantiante the IOPCServer interface and get a pointer of it:
 	printf("Instantiating the MATRIKON OPC Server for Simulation...\n");
@@ -188,6 +197,8 @@ void main(void)
 	}
 	while ((ticks2 - ticks1) < 10000);
 
+
+
 	// Cancel the callback and release its reference
 	printf("Cancelling the IOPCDataCallback notifications...\n");
     CancelDataCallback(pIConnectionPoint, dwCookie);
@@ -206,6 +217,23 @@ void main(void)
 	// release the interface references:
 	printf("Removing the OPC server object...\n");
 	pIOPCServer->Release();
+
+	// Finalizando as Threads
+	if (TCPClient.joinable())
+	{
+		TCPClient.join();
+		printf("Aplicacaoo TCP finalizada com sucesso\n");
+	}
+	else
+		printf("Thread TCP nao foi finalizada\n");
+
+	if (Teclado.joinable())
+	{
+		Teclado.join();
+		printf("Aplicacao teclado finalizada com sucesso \n");
+	}
+	else
+		printf("Thread Teclado nao foi finalizada\n");
 
 	//close the COM library:
 	printf ("Releasing the COM environment...\n");

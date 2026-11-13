@@ -92,8 +92,12 @@
     <ClCompile Include="SOCAdviseSink.cpp" />
     <ClCompile Include="SOCDataCallback.cpp" />
     <ClCompile Include="SOCWrapperlFunctions.cpp" />
+    <ClCompile Include="ThreadTCPClient.cpp" />
+    <ClCompile Include="ThreadTeclado.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ThreadTCPClient.h" />
+    <ClInclude Include="ThreadTeclado.h" />
     <ClInclude Include="opcda.h" />
     <ClInclude Include="opcerror.h" />
     <ClInclude Include="SimpleOPCClient_v3.h" />
