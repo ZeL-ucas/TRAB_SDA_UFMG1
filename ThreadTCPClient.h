@@ -4,5 +4,6 @@
 #include <stdio.h>
 #include <iostream>
 #include <mutex>
+#include "memoria.h"
 
-int threadClient(std::mutex *escrita);
+int threadClient(memoria* memoria);

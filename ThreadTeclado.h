@@ -1,6 +1,6 @@
 #pragma once
 
 #include <mutex>
-
+#include "memoria.h"
 // Thread que recebe sinais da entrada padrão
-int threadTeclado(std::mutex* escrita);
+int threadTeclado(memoria* memoria);

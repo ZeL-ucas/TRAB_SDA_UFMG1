@@ -37,13 +37,20 @@
 #include <mutex>
 #include "ThreadTCPClient.h"
 #include "ThreadTeclado.h"
+#include "memoria.h"
+// Resumo das modificações nos arquivos disponibilizado -> funçoes alteradas praa trabalharem com vetores e nao items
+// funçao adicional pra escrever no servidor OPC quando os setpoints sao disponibilizados 
+// funçao de ondatachange modificada pra printar todos os valroes seguindo um padrao 
+// grande parte da main foi apagada, e o tempo foi alterado pra 1000ms 
+// decidiu-se manter o padrao do arquivo e tentar manter a maioria das variaveis com nomes semelhantes as que tavam antes no codigo 
+// esse arquivo agr também inicia as threads e cria a memoria global utilizada para comunicação entre as threads e o OPC Client
 
 using namespace std;
 
 #define OPC_SERVER_NAME L"Matrikon.OPC.Simulation.1"
 #define VT VT_R4
+#define NUM_ITEMS 7
 
-mutex escritaSaidaPadrao;
 
 //#define REMOTE_SERVER_NAME L"your_path"
 
@@ -54,191 +61,82 @@ mutex escritaSaidaPadrao;
 UINT OPC_DATA_TIME = RegisterClipboardFormat (_T("OPCSTMFORMATDATATIME"));
 
 wchar_t ITEM_ID[]=L"Saw-toothed Waves.Real4";
-
-//////////////////////////////////////////////////////////////////////
-// Read the value of an item on an OPC server. 
-//
-void main(void)
+//vetor de strings com os nomes dos itens a serem lidos/escritos no servidor OPC
+const wchar_t* ITEM_IDS[NUM_ITEMS] = {
+	L"Saw-toothed Waves.Real4",
+	L"Square Waves.Real4",      
+	L"Triangle Waves.Real4",    
+	L"Random.Real4",            
+	L"Bucket Brigade.Int4", 
+	L"Bucket Brigade.Real4",    
+	L"Bucket Brigade.Real8"     
+};
+//tipo de dado de cada item, 4 leitura 3 escrta
+const VARTYPE ITEM_VTS[NUM_ITEMS] = {
+	VT_R4, VT_R4, VT_R4, VT_R4, 
+	VT_I4, VT_R4, VT_R8         
+};
+//trocou de void pra int pq agr retorna 0 
+int main(void)
 {
 	IOPCServer* pIOPCServer = NULL;   //pointer to IOPServer interface
 	IOPCItemMgt* pIOPCItemMgt = NULL; //pointer to IOPCItemMgt interface
 
-	OPCHANDLE hServerGroup; // server handle to the group
-	OPCHANDLE hServerItem;  // server handle to the item
-
+	OPCHANDLE hServerGroup;
+	OPCHANDLE hServerItems[NUM_ITEMS];
+	memoria memoria;
 	int i;
 	char buf[100];
 
 	// Have to be done before using microsoft COM library:
 	printf("Initializing the COM environment...\n");
-	CoInitialize(NULL);
-
+	HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+	_ASSERT(!FAILED(hr));
 	// Inicialização das threads
 
-	thread TCPClient(threadClient, &escritaSaidaPadrao);
-	thread Teclado(threadTeclado, &escritaSaidaPadrao);
-
-	// Let's instantiante the IOPCServer interface and get a pointer of it:
-	printf("Instantiating the MATRIKON OPC Server for Simulation...\n");
+	thread TCPClient(threadClient, &memoria);
+	thread Teclado(threadTeclado, &memoria);
 	pIOPCServer = InstantiateServer(OPC_SERVER_NAME);
-	
-	// Add the OPC group the OPC server and get an handle to the IOPCItemMgt
-	//interface:
-	printf("Adding a group in the INACTIVE state for the moment...\n");
+
 	AddTheGroup(pIOPCServer, pIOPCItemMgt, hServerGroup);
 
-	// Add the OPC item. First we have to convert from wchar_t* to char*
-	// in order to print the item name in the console.
-    size_t m;
-	wcstombs_s(&m, buf, 100, ITEM_ID, _TRUNCATE);
-	printf("Adding the item %s to the group...\n", buf);
-    AddTheItem(pIOPCItemMgt, hServerItem);
 
-	//Synchronous read of the device´s item value.
-	VARIANT varValue; //to store the read value
-	VariantInit(&varValue);
-	printf ("Reading synchronously during 10 seconds...\n");
-	for (i=0; i<10; i++) {
-	  ReadItem(pIOPCItemMgt, hServerItem, varValue);
-	  // print the read value:
-	  printf("Read value: %6.2f\n", varValue.fltVal);
-	  // wait 1 second
-	  Sleep(1000);
-	}
-	
-	// Establish a callback asynchronous read by means of the old IAdviseSink()
-	// (OPC DA 1.0) method. We first instantiate a new SOCAdviseSink object and
-	// adjusts its reference count, and then call a wrapper function to
-	// setup the callback.
-	IDataObject* pIDataObject = NULL; //pointer to IDataObject interface
-	DWORD tkAsyncConnection = 0;
-	SOCAdviseSink* pSOCAdviseSink = new SOCAdviseSink ();
-	pSOCAdviseSink->AddRef();
-    printf("Setting up the IAdviseSink callback connection...\n");
-    SetAdviseSink(pIOPCItemMgt, pSOCAdviseSink, pIDataObject, &tkAsyncConnection);
-
-	// Change the group to the ACTIVE state so that we can receive the
-	// server´s callback notification
-	printf("Changing the group state to ACTIVE...\n");
-    SetGroupActive(pIOPCItemMgt); 
-
-	// Enters a message pump in order to process the server´s callback
-	// notifications. This is needed because the CoInitialize() function
-	// forces the COM threading model to STA (Single Threaded Apartment),
-	// in which, according to the MSDN, "all method calls to a COM object
-	// (...) are synchronized with the windows message queue for the
-	// single-threaded apartment's thread." So, even being a console
-	// application, the OPC client must process messages (which in this case
-	// are only useless WM_USER [0x0400] messages) in order to process
-	// incoming callbacks from a OPC server.
-	//
-	// A better alternative could be to use the CoInitializeEx() function,
-	// which allows one to  specifiy the desired COM threading model;
-	// in particular, calling
-	//        CoInitializeEx(NULL, COINIT_MULTITHREADED)
-	// sets the model to MTA (MultiThreaded Apartments) in which a message
-	// loop is __not required__ since objects in this model are able to
-	// receive method calls from other threads at any time. However, in the
-	// MTA model the user is required to handle any aspects regarding
-	// concurrency, since asynchronous, multiple calls to the object methods
-	// can occur.
-	//
-	int bRet;
-	MSG msg;
-	DWORD ticks1, ticks2;
-	ticks1 = GetTickCount();
-	printf("Waiting for IAdviseSink callback notifications during 10 seconds...\n");
-	do {
-		bRet = GetMessage( &msg, NULL, 0, 0 );
-		if (!bRet){
-			printf ("Failed to get windows message! Error code = %d\n", GetLastError());
-			exit(0);
-		}
-		TranslateMessage(&msg); // This call is not really needed ...
-		DispatchMessage(&msg);  // ... but this one is!
-        ticks2 = GetTickCount();
-	}
-	while ((ticks2 - ticks1) < 10000);
-
-	// Cancel the callback and release its reference
-	printf("Cancelling the IAdviseSink callback...\n");
-    CancelAdviseSink(pIDataObject, tkAsyncConnection);
-	pSOCAdviseSink->Release();
-    
-	// Establish a callback asynchronous read by means of the IOPCDaraCallback
-	// (OPC DA 2.0) method. We first instantiate a new SOCDataCallback object and
-	// adjusts its reference count, and then call a wrapper function to
-	// setup the callback.
-	IConnectionPoint* pIConnectionPoint = NULL; //pointer to IConnectionPoint Interface
+	AddTheItems(pIOPCItemMgt, hServerItems);
+	IConnectionPoint* pIConnectionPoint = NULL;
 	DWORD dwCookie = 0;
-	SOCDataCallback* pSOCDataCallback = new SOCDataCallback();
+	SOCDataCallback* pSOCDataCallback = new SOCDataCallback(&memoria);
 	pSOCDataCallback->AddRef();
-
-	printf("Setting up the IConnectionPoint callback connection...\n");
 	SetDataCallback(pIOPCItemMgt, pSOCDataCallback, pIConnectionPoint, &dwCookie);
+	SetGroupActive(pIOPCItemMgt);
+	while (!memoria.encerrar) {
+		if (memoria.novosSetPoints) {
+			memoria.novosSetPoints = false; 
 
-	// Change the group to the ACTIVE state so that we can receive the
-	// server´s callback notification
-	printf("Changing the group state to ACTIVE...\n");
-    SetGroupActive(pIOPCItemMgt); 
+			memoria.mtxDados.lock();
+			int spPressao = memoria.spPressaoCamara;
+			float spTemp = memoria.spTempCamara;
+			double spArgonio = memoria.spPressaoArgonio;
+			memoria.mtxDados.unlock();
 
-	// Enter again a message pump in order to process the server´s callback
-	// notifications, for the same reason explained before.
-		
-	ticks1 = GetTickCount();
-	printf("Waiting for IOPCDataCallback notifications during 10 seconds...\n");
-	do {
-		bRet = GetMessage( &msg, NULL, 0, 0 );
-		if (!bRet){
-			printf ("Failed to get windows message! Error code = %d\n", GetLastError());
-			exit(0);
+			WriteSetPoints(pIOPCItemMgt, hServerItems, spPressao, spTemp, spArgonio);
+
 		}
-		TranslateMessage(&msg); // This call is not really needed ...
-		DispatchMessage(&msg);  // ... but this one is!
-        ticks2 = GetTickCount();
 	}
-	while ((ticks2 - ticks1) < 10000);
-
-	// Cancel the callback and release its reference
-	printf("Cancelling the IOPCDataCallback notifications...\n");
-    CancelDataCallback(pIConnectionPoint, dwCookie);
-	//pIConnectionPoint->Release();
+	CancelDataCallback(pIConnectionPoint, dwCookie);
 	pSOCDataCallback->Release();
 
-	// Remove the OPC item:
-	printf("Removing the OPC item...\n");
-	RemoveItem(pIOPCItemMgt, hServerItem);
-
-	// Remove the OPC group:
-	printf("Removing the OPC group object...\n");
-    pIOPCItemMgt->Release();
+	RemoveItems(pIOPCItemMgt, hServerItems);
+	pIOPCItemMgt->Release();
 	RemoveGroup(pIOPCServer, hServerGroup);
-
-	// release the interface references:
-	printf("Removing the OPC server object...\n");
 	pIOPCServer->Release();
 
-	// Finalizando as Threads
-	if (TCPClient.joinable())
-	{
-		TCPClient.join();
-		printf("Aplicacaoo TCP finalizada com sucesso\n");
-	}
-	else
-		printf("Thread TCP nao foi finalizada\n");
+	if (TCPClient.joinable()) TCPClient.join();
+	if (Teclado.joinable()) Teclado.join();
 
-	if (Teclado.joinable())
-	{
-		Teclado.join();
-		printf("Aplicacao teclado finalizada com sucesso \n");
-	}
-	else
-		printf("Thread Teclado nao foi finalizada\n");
-
-	//close the COM library:
-	printf ("Releasing the COM environment...\n");
 	CoUninitialize();
+	return 0;
 }
+
 
 ////////////////////////////////////////////////////////////////////
 // Instantiate the IOPCServer interface of the OPCServer
@@ -292,18 +190,10 @@ void AddTheGroup(IOPCServer* pIOPCServer, IOPCItemMgt* &pIOPCItemMgt,
 	DWORD dwUpdateRate = 0;
 	OPCHANDLE hClientGroup = 0;
 
-	// Add an OPC group and get a pointer to the IUnknown I/F:
-    HRESULT hr = pIOPCServer->AddGroup(/*szName*/ L"Group1",
-		/*bActive*/ FALSE,
-		/*dwRequestedUpdateRate*/ 1000,
-		/*hClientGroup*/ hClientGroup,
-		/*pTimeBias*/ 0,
-		/*pPercentDeadband*/ 0,
-		/*dwLCID*/0,
-		/*phServerGroup*/&hServerGroup,
-		&dwUpdateRate,
-		/*riid*/ IID_IOPCItemMgt,
-		/*ppUnk*/ (IUnknown**) &pIOPCItemMgt);
+	//alteração pra bater os 1000ms requerido 
+	HRESULT hr = pIOPCServer->AddGroup(
+		L"Group1", FALSE, 1000, hClientGroup, 0, 0, 0,
+		&hServerGroup, &dwUpdateRate, IID_IOPCItemMgt, (IUnknown**)&pIOPCItemMgt);
 	_ASSERT(!FAILED(hr));
 }
 
@@ -314,45 +204,45 @@ void AddTheGroup(IOPCServer* pIOPCServer, IOPCItemMgt* &pIOPCItemMgt,
 // is pointed by pIOPCItemMgt pointer. Return a server opc handle
 // to the item.
  
-void AddTheItem(IOPCItemMgt* pIOPCItemMgt, OPCHANDLE& hServerItem)
+void AddTheItems(IOPCItemMgt* pIOPCItemMgt, OPCHANDLE hServerItems[NUM_ITEMS])
 {
 	HRESULT hr;
+	OPCITEMDEF ItemArray[NUM_ITEMS];
+	//cadsatra 7itens ao inves de 1 agr, só os 4 primeiros (0 a 3) sao leitura assincrona
+	for (int i = 0; i < NUM_ITEMS; i++) {
+		ItemArray[i].szAccessPath = L"";
+		ItemArray[i].szItemID = (LPWSTR)ITEM_IDS[i];
+		ItemArray[i].bActive = (i < 4) ? TRUE : FALSE;
+		ItemArray[i].hClient = i + 1;
+		ItemArray[i].dwBlobSize = 0;
+		ItemArray[i].pBlob = NULL;
+		ItemArray[i].vtRequestedDataType = ITEM_VTS[i];
+		ItemArray[i].wReserved = 0;
+	}
 
-	// Array of items to add:
-	OPCITEMDEF ItemArray[1] =
-	{{
-	/*szAccessPath*/ L"",
-	/*szItemID*/ ITEM_ID,
-	/*bActive*/ TRUE,
-	/*hClient*/ 1,
-	/*dwBlobSize*/ 0,
-	/*pBlob*/ NULL,
-	/*vtRequestedDataType*/ VT,
-	/*wReserved*/0
-	}};
-
-	//Add Result:
-	OPCITEMRESULT* pAddResult=NULL;
+	OPCITEMRESULT* pAddResult = NULL;
 	HRESULT* pErrors = NULL;
 
-	// Add an Item to the previous Group:
-	hr = pIOPCItemMgt->AddItems(1, ItemArray, &pAddResult, &pErrors);
-	if (hr != S_OK){
-		printf("Failed call to AddItems function. Error code = %x\n", hr);
+	hr = pIOPCItemMgt->AddItems(NUM_ITEMS, ItemArray, &pAddResult, &pErrors);
+	if (hr != S_OK && hr != S_FALSE) {
+		printf("[OPC ERRO] Falha na chamada AddItems. Codigo = %x\n", hr);
 		exit(0);
 	}
 
-	// Server handle for the added item:
-	hServerItem = pAddResult[0].hServer;
-
-	// release memory allocated by the server:
-	CoTaskMemFree(pAddResult->pBlob);
+	for (int i = 0; i < NUM_ITEMS; i++) {
+		if (FAILED(pErrors[i])) {
+			printf("[OPC ERRO] Falha ao adicionar o item %d!\n", i);
+		}
+		else {
+			hServerItems[i] = pAddResult[i].hServer;
+		}
+		if (pAddResult[i].pBlob != NULL) {
+			CoTaskMemFree(pAddResult[i].pBlob);
+		}
+	}
 
 	CoTaskMemFree(pAddResult);
-	pAddResult = NULL;
-
 	CoTaskMemFree(pErrors);
-	pErrors = NULL;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -360,7 +250,7 @@ void AddTheItem(IOPCItemMgt* pIOPCItemMgt, OPCHANDLE& hServerItem)
 // handle and belonging to the group whose one interface is pointed by
 // pGroupIUnknown. The value is put in varValue. 
 //
-void ReadItem(IUnknown* pGroupIUnknown, OPCHANDLE hServerItem, VARIANT& varValue)
+void ReadItems(IUnknown* pGroupIUnknown, OPCHANDLE hServerItem, VARIANT& varValue)
 {
 	// value of the item:
 	OPCITEMSTATE* pValue = NULL;
@@ -392,20 +282,13 @@ void ReadItem(IUnknown* pGroupIUnknown, OPCHANDLE hServerItem, VARIANT& varValue
 // Remove the item whose server handle is hServerItem from the group
 // whose IOPCItemMgt interface is pointed by pIOPCItemMgt
 //
-void RemoveItem(IOPCItemMgt* pIOPCItemMgt, OPCHANDLE hServerItem)
-{
-	// server handle of items to remove:
-	OPCHANDLE hServerArray[1];
-	hServerArray[0] = hServerItem;
-	
-	//Remove the item:
-	HRESULT* pErrors; // to store error code(s)
-	HRESULT hr = pIOPCItemMgt->RemoveItems(1, hServerArray, &pErrors);
+void RemoveItems(IOPCItemMgt* pIOPCItemMgt, OPCHANDLE  hServerItems[NUM_ITEMS])
+{	//funçao 
+	HRESULT* pErrors = NULL;
+	HRESULT hr = pIOPCItemMgt->RemoveItems(NUM_ITEMS, hServerItems, &pErrors);
 	_ASSERT(!hr);
 
-	//release memory allocated by the server:
-	CoTaskMemFree(pErrors);
-	pErrors = NULL;
+	if (pErrors != NULL) CoTaskMemFree(pErrors);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -422,4 +305,34 @@ void RemoveGroup (IOPCServer* pIOPCServer, OPCHANDLE hServerGroup)
 		else printf ("Failed to remove OPC group. Error code = %x\n", hr);
 		exit(0);
 	}
+}
+
+void WriteSetPoints(IUnknown* pGroupIUnknown, OPCHANDLE hServerItems[NUM_ITEMS],
+	int spPressao, float spTemp, double spArgonio)
+{
+	IOPCSyncIO* pIOPCSyncIO = NULL;
+	pGroupIUnknown->QueryInterface(__uuidof(pIOPCSyncIO), (void**)&pIOPCSyncIO);
+	OPCHANDLE hItensEscrita[3] = {
+		hServerItems[4],
+		hServerItems[5], 
+		hServerItems[6]  
+	};
+
+	VARIANT valores[3];
+	VariantInit(&valores[0]);
+	VariantInit(&valores[1]);
+	VariantInit(&valores[2]);
+
+	valores[0].vt = VT_I4;
+	valores[0].lVal = spPressao;
+
+	valores[1].vt = VT_R4;
+	valores[1].fltVal = spTemp;
+
+	valores[2].vt = VT_R8;
+	valores[2].dblVal = spArgonio;
+
+	HRESULT* pErrors = NULL;
+	HRESULT hr = pIOPCSyncIO->Write(3, hItensEscrita, valores, &pErrors);
+	pIOPCSyncIO->Release();
 }

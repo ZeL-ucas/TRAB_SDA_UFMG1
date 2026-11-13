@@ -28,9 +28,13 @@
 IOPCServer *InstantiateServer(wchar_t ServerName[]);
 void AddTheGroup(IOPCServer* pIOPCServer, IOPCItemMgt* &pIOPCItemMgt, 
 				 OPCHANDLE& hServerGroup);
-void AddTheItem(IOPCItemMgt* pIOPCItemMgt, OPCHANDLE& hServerItem);
+//alterado pra ganhar um array
+void AddTheItems(IOPCItemMgt* pIOPCItemMgt, OPCHANDLE hServerItems[7]);
 void ReadItem(IUnknown* pGroupIUnknown, OPCHANDLE hServerItem, VARIANT& varValue);
-void RemoveItem(IOPCItemMgt* pIOPCItemMgt, OPCHANDLE hServerItem);
+//alterado pra ganhar um array
+void RemoveItems(IOPCItemMgt* pIOPCItemMgt, OPCHANDLE hServerItems[7]);
 void RemoveGroup(IOPCServer* pIOPCServer, OPCHANDLE hServerGroup);
 
+//funçao nova pra escrever os setpoints
+void WriteSetPoints(IUnknown* pGroupIUnknown, OPCHANDLE hServerItems[7], int spPressao, float spTemp, double spArgonio);
 #endif // SIMPLE_OPC_CLIENT_H not defined

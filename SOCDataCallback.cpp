@@ -10,12 +10,14 @@
 #include <stdio.h>
 #include "SOCDataCallback.h"
 #include "SOCWrapperFunctions.h"
-
+#include "memoria.h"
 extern UINT OPC_DATA_TIME;
 
 //	Constructor.  Reference count is initialized to zero.
-SOCDataCallback::SOCDataCallback () : m_cnRef (0)
+SOCDataCallback::SOCDataCallback (memoria* memoria) : m_cnRef (0)
 	{
+	m_cnRef = 0;
+	m_interna = memoria;
 	}
 
 //	Destructor
@@ -92,67 +94,82 @@ HRESULT STDMETHODCALLTYPE SOCDataCallback::OnDataChange(
 	HRESULT hrMasterQuality,
 	HRESULT hrMasterError,
 	DWORD dwCount,
-	OPCHANDLE *phClientItems,
-	VARIANT *pvValues,
-	WORD *pwQualities,
-	FILETIME *pftTimeStamps,
-	HRESULT *pErrors)
+	OPCHANDLE* phClientItems,
+	VARIANT* pvValues,
+	WORD* pwQualities,
+	FILETIME* pftTimeStamps,
+	HRESULT* pErrors)
 {
 	FILETIME lft;
 	SYSTEMTIME st;
-    char szLocalDate[255], szLocalTime[255];
+	char szLocalDate[255], szLocalTime[255];
 	bool status;
 	char buffer[100];
 	WORD quality;
 
-	// Validate arguments.  Return with "invalid argument" error code 
-	// if any are invalid. KEPWARE´s original code checks also if the
-	// "hgroup" parameter (the client´s handle for the group) was also
-	// NULL, but we dropped this check since the Simple OPC Client
-	// sets the client handle to 0 ...
-	if (dwCount					== 0	||
-		phClientItems			== NULL	||
-		pvValues				== NULL	||
-		pwQualities				== NULL	||
-		pftTimeStamps			== NULL	||
-		pErrors					== NULL){
-		printf("IOPCDataCallback::ONDataChange: invalid arguments.\n");
+	if (dwCount == 0 ||
+		phClientItems == NULL ||
+		pvValues == NULL ||
+		pwQualities == NULL ||
+		pftTimeStamps == NULL ||
+		pErrors == NULL) {
+		printf("IOPCDataCallback::OnDataChange: invalid arguments.\n");
 		return (E_INVALIDARG);
 	}
-	
-	// Loop over items:
+
+	// Percorre todos os itens que sofreram alteração neste ciclo de 1000 ms
 	for (DWORD dwItem = 0; dwItem < dwCount; dwItem++)
 	{
-		// Print the item value, quality and time stamp. In this example, only
-		// a few OPC data types are supported.
 		status = VarToStr(pvValues[dwItem], buffer);
-		if (status){
-			printf("Data callback: Value = %s", buffer);
-			quality = pwQualities [dwItem] & OPC_QUALITY_MASK;
-			if (quality == OPC_QUALITY_GOOD)
-				printf(" Quality: good");
-			else
-			    printf(" Quality: not good");
-			// Code below extracted from the Microsoft KB:
-			//     http://support.microsoft.com/kb/188768
-			// Note that in order for it to work, the Visual Studio C++ must
-			// be configured so that the "character set" property is "not set"
-			// (Project->Project Properties->Configuration Properties->General).
-			// Otherwise, if defined e.g. as "use Unicode" (as it seems to be
-			// the default when a new project is created), there will be
-			// compilation errors.
-			FileTimeToLocalFileTime(&pftTimeStamps [dwItem],&lft);
+		if (status) {
+			const char* nomeItem = "Desconhecido";
+
+			if (m_interna != NULL && pvValues[dwItem].vt == VT_R4) {
+				float valor = pvValues[dwItem].fltVal;
+
+				m_interna->mtxDados.lock();
+				switch (phClientItems[dwItem]) {
+				case 1:
+					m_interna->tempCamara = valor;
+					nomeItem = "Temp. Camara (Saw-toothed)";
+					break;
+				case 2:
+					m_interna->pressaoCamara = valor;
+					nomeItem = "Pressao Camara (Square)";
+					break;
+				case 3:
+					m_interna->pressaoArgonio = valor;
+					nomeItem = "Pressao Argonio (Triangle)";
+					break;
+				case 4:
+					m_interna->tempPanela = valor;
+					nomeItem = "Temp. Panela (Random)";
+					break;
+				}
+				m_interna->mtxDados.unlock();
+			}
+
+			quality = pwQualities[dwItem] & OPC_QUALITY_MASK;
+			const char* strQuality = (quality == OPC_QUALITY_GOOD) ? "good" : "not good";
+
+			FileTimeToLocalFileTime(&pftTimeStamps[dwItem], &lft);
 			FileTimeToSystemTime(&lft, &st);
 			GetDateFormat(LOCALE_SYSTEM_DEFAULT, DATE_SHORTDATE, &st, NULL, szLocalDate, 255);
 			GetTimeFormat(LOCALE_SYSTEM_DEFAULT, 0, &st, NULL, szLocalTime, 255);
-			printf(" Time: %s %s\n", szLocalDate, szLocalTime);
+
+			// 3. Exibe na console protegido pelo mutex de saída
+			if (m_interna != NULL) m_interna->mtxSaida.lock();
+			printf("[OPC READ] Item[%d] %s = %s | Quality: %s | Time: %s %s\n",
+				phClientItems[dwItem], nomeItem, buffer, strQuality, szLocalDate, szLocalTime);
+			if (m_interna != NULL) m_interna->mtxSaida.unlock();
 		}
-		else printf ("IOPCDataCallback: Unsupported item type\n");
+		else {
+			if (m_interna != NULL) m_interna->mtxSaida.lock();
+			printf("IOPCDataCallback: Unsupported item type\n");
+			if (m_interna != NULL) m_interna->mtxSaida.unlock();
+		}
 	}
 
-	// Return "success" code.  Note this does not mean that there were no 
-	// errors reported by the OPC Server, only that we successfully processed
-	// the callback.
 	return (S_OK);
 }
 // The remaining methods of IOPCDataCallback are not implemented here, so

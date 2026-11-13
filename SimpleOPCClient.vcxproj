@@ -87,6 +87,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="memoria.cpp" />
     <ClCompile Include="opcda_i.c" />
     <ClCompile Include="SimpleOPCClient_v3.cpp" />
     <ClCompile Include="SOCAdviseSink.cpp" />
@@ -96,6 +97,7 @@
     <ClCompile Include="ThreadTeclado.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="memoria.h" />
     <ClInclude Include="ThreadTCPClient.h" />
     <ClInclude Include="ThreadTeclado.h" />
     <ClInclude Include="opcda.h" />

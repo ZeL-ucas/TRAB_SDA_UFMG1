@@ -9,15 +9,15 @@
 // 
 
 #include "opcda.h"
-
+#include "memoria.h"
 #ifndef _SOCDATACALLBACK_H
 #define _SOCDATACALLBACK_H
-
+// arquivo alterado pra poder mexer com a struct de dados nova memoria 
 // **************************************************************************
 class SOCDataCallback : public IOPCDataCallback
 	{
 	public:
-		SOCDataCallback ();
+		SOCDataCallback(memoria* ctx = NULL);
 		~SOCDataCallback ();
 
 		// IUnknown Methods
@@ -63,6 +63,7 @@ class SOCDataCallback : public IOPCDataCallback
 			OPCHANDLE hGroup);
 
 	private:
+		memoria* m_interna;
 		DWORD m_cnRef;
 	};
 
