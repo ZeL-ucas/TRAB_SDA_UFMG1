@@ -119,6 +119,10 @@ int main(void)
 			memoria.mtxDados.unlock();
 
 			WriteSetPoints(pIOPCItemMgt, hServerItems, spPressao, spTemp, spArgonio);
+			memoria.mtxSaida.lock();
+			printf("[OPC WRITE] Set-Points escritos no servidor OPC: Pressao: %d | Temp: %.1f | Argonio: %.1lf\n",
+				spPressao, spTemp, spArgonio);
+			memoria.mtxSaida.unlock();
 
 		}
 	}

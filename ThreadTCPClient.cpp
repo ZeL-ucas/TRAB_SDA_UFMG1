@@ -25,7 +25,7 @@ int threadClient(memoria* memoria) {
 	SOCKADDR_IN ServerAddr;
 	char bufEnvio[TAMBUF];
 	char bufRecepcao[TAMBUF];
-	int numSequencial = 1;
+	
 	char* ipaddr, buf[TAMBUF], msg[TAMBUF + 1];
 	int  port, status;
 	ipaddr = IP_SERVIDOR;
@@ -64,6 +64,7 @@ int threadClient(memoria* memoria) {
 		memoria->mtxSaida.lock();
 		printf(" TCP Conectado ao Computador de Processo (porta 2540)!\n");
 		memoria->mtxSaida.unlock();
+		int numSequencial = 1;//zera o sequencial sempre que reconeta 
 		//zera a variavel caso tenha sido escrito algo enquanto tava off
 		memoria->pedirSetPoints = false;
 		DWORD ultimoEnvio =	GetTickCount64();
